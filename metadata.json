@@ -1,0 +1,6 @@
+{
+  "name": "Мои счетчики",
+  "description": "Удобное iOS-приложение для учета показаний счетчиков воды (ХВ №11, ГВ №13) и электричества, расчета стоимости услуг, отправки отчетов арендодателю и ведения статистики.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
