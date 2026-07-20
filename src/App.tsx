@@ -17,7 +17,8 @@ import {
   checkRedirectResult,
   logoutGoogle,
   createGoogleSpreadsheet,
-  syncReadingsToGoogleSheet
+  syncReadingsToGoogleSheet,
+  fetchReadingsFromGoogleSheet
 } from './utils/googleSheets';
 import { User as FirebaseUser } from 'firebase/auth';
 
@@ -168,12 +169,6 @@ export default function App() {
         if (res && active) {
           setGoogleUser(res.user);
           setGoogleToken(res.accessToken);
-          
-          // Auto sync if spreadsheet is connected
-          const savedSpreadsheetId = safeStorage.getItem('google_spreadsheet_id');
-          if (savedSpreadsheetId) {
-            await syncToSheets(res.accessToken, savedSpreadsheetId, readings);
-          }
         }
       } catch (err) {
         console.error('Error handling Google Redirect result:', err);
@@ -199,7 +194,7 @@ export default function App() {
       active = false;
       unsubscribe();
     };
-  }, [readings]);
+  }, []);
 
   // UI States
   const [activeTab, setActiveTab] = useState<TabType>('readings');
@@ -325,17 +320,79 @@ export default function App() {
     }
   };
 
+  // Pull values from Google Spreadsheet helper
+  const handlePullFromSheets = async (
+    targetToken: string,
+    targetSpreadsheetId: string,
+    silent = false
+  ) => {
+    setIsSyncing(true);
+    try {
+      const fetched = await fetchReadingsFromGoogleSheet(targetToken, targetSpreadsheetId);
+      if (fetched.length > 0) {
+        setReadings((prevReadings) => {
+          const merged = [...prevReadings];
+          let addedCount = 0;
+          let updatedCount = 0;
+
+          fetched.forEach((item) => {
+            const existingIdx = merged.findIndex((r) => r.date === item.date);
+            if (existingIdx !== -1) {
+              // Update values
+              merged[existingIdx] = {
+                ...merged[existingIdx],
+                coldWater: item.coldWater,
+                hotWater: item.hotWater,
+                electricity: item.electricity,
+                electricityHalfPeak: item.electricityHalfPeak !== undefined ? item.electricityHalfPeak : merged[existingIdx].electricityHalfPeak,
+                electricityNight: item.electricityNight !== undefined ? item.electricityNight : merged[existingIdx].electricityNight,
+                notes: item.notes || merged[existingIdx].notes || '',
+              };
+              updatedCount++;
+            } else {
+              // Add new
+              merged.push(item);
+              addedCount++;
+            }
+          });
+
+          // Sort chronologically
+          merged.sort((a, b) => a.date.localeCompare(b.date));
+
+          if (!silent) {
+            alert(`📊 Данные успешно импортированы из Google Таблицы!\n• Добавлено новых записей: ${addedCount}\n• Обновлено записей: ${updatedCount}`);
+          }
+          return merged;
+        });
+      } else {
+        if (!silent) {
+          alert('ℹ️ В Google Таблице не обнаружено записей или она пуста.');
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to pull from Google Sheets:', err);
+      if (!silent) {
+        alert(`❌ Не удалось загрузить данные из таблицы: ${err.message || err}`);
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleManualPull = async () => {
+    if (!googleToken || !spreadsheetId) {
+      alert('⚠️ Синхронизация невозможна. Проверьте подключение.');
+      return;
+    }
+    await handlePullFromSheets(googleToken, spreadsheetId, false);
+  };
+
   const handleGoogleLogin = async () => {
     try {
       const res = await googleSignIn();
       if (res) {
         setGoogleUser(res.user);
         setGoogleToken(res.accessToken);
-        
-        // If they already have a spreadsheetId, auto sync after logging in!
-        if (spreadsheetId) {
-          await syncToSheets(res.accessToken, spreadsheetId, readings);
-        }
       }
     } catch (err: any) {
       alert(`❌ Ошибка авторизации: ${err.message || err}`);
@@ -375,15 +432,15 @@ export default function App() {
         console.warn(e);
       }
       
-      // Auto sync immediately!
+      // Auto sync immediately to populate the newly created sheet!
       await syncToSheets(googleToken, newId, readings);
-      
+
       confetti({
         particleCount: 100,
         spread: 70,
         origin: { y: 0.6 }
       });
-      alert('✅ Google Таблица успешно создана на вашем Google Диске и подключена к приложению!');
+      alert('✅ Google Таблица успешно создана на вашем Google Диске и подключена к приложению! Первоначальные данные были автоматически загружены.');
     } catch (err: any) {
       alert(`❌ Ошибка создания таблицы: ${err.message || err}`);
     } finally {
@@ -391,14 +448,16 @@ export default function App() {
     }
   };
 
-  const handleSaveSpreadsheetId = (id: string | null) => {
+  const handleSaveSpreadsheetId = async (id: string | null) => {
     setSpreadsheetId(id);
     try {
       if (id) {
         safeStorage.setItem('google_spreadsheet_id', id);
-        // Auto-sync immediately to ensure table structure is created/updated
+        // Auto-pull immediately to load existing data from the sheet into the application!
         if (googleToken) {
-          syncToSheets(googleToken, id, readings);
+          await handlePullFromSheets(googleToken, id, false);
+        } else {
+          alert('✅ ID таблицы сохранен! Пожалуйста, войдите в аккаунт Google для синхронизации.');
         }
       } else {
         safeStorage.removeItem('google_spreadsheet_id');
@@ -443,7 +502,7 @@ export default function App() {
     }
     setIsModalOpen(false);
 
-    // Auto sync to Google Sheets if logged in and spreadsheet is connected
+    // Auto-sync to Google Sheets if logged in and spreadsheet is connected
     if (googleToken && spreadsheetId) {
       syncToSheets(googleToken, spreadsheetId, updatedReadings);
     }
@@ -456,7 +515,7 @@ export default function App() {
       const updatedReadings = readings.filter(r => r.id !== readingId);
       setReadings(updatedReadings);
 
-      // Auto sync to Google Sheets if logged in and spreadsheet is connected
+      // Auto-sync to Google Sheets if logged in and spreadsheet is connected
       if (googleToken && spreadsheetId) {
         syncToSheets(googleToken, spreadsheetId, updatedReadings);
       }
@@ -711,6 +770,7 @@ export default function App() {
                   onGoogleLogout={handleGoogleLogout}
                   onCreateSpreadsheet={handleCreateSpreadsheet}
                   onSyncToGoogleSheet={handleManualSync}
+                  onPullFromGoogleSheet={handleManualPull}
                   onSaveSpreadsheetId={handleSaveSpreadsheetId}
                 />
               )}

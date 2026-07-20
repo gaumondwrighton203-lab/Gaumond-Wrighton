@@ -12,6 +12,7 @@ import {
 import firebaseConfig from '../../firebase-applet-config.json';
 import { CalculatedReading } from './calculations';
 import { safeStorage } from './storage';
+import { MeterReading } from '../types';
 
 // Dynamically configure authDomain for Netlify proxying to fix Safari third-party cookie issue
 const getDynamicFirebaseConfig = () => {
@@ -345,4 +346,118 @@ export const syncReadingsToGoogleSheet = async (
     // Non-blocking formatting error, ignore
     console.warn('Formatting spreadsheet failed:', err);
   }
+};
+
+// Fetch readings from Google Spreadsheet
+export const fetchReadingsFromGoogleSheet = async (
+  accessToken: string,
+  spreadsheetId: string
+): Promise<MeterReading[]> => {
+  // 1. Fetch sheet metadata to resolve sheet name
+  let sheetName = 'Sheet1';
+  try {
+    const metaResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      },
+    });
+    if (metaResponse.ok) {
+      const metaData = await metaResponse.json();
+      if (metaData.sheets && metaData.sheets.length > 0) {
+        sheetName = metaData.sheets[0].properties.title || 'Sheet1';
+      }
+    }
+  } catch (metaErr) {
+    console.warn('Could not fetch spreadsheet metadata for read, falling back to default Sheet1:', metaErr);
+  }
+
+  // 2. Fetch sheet values
+  const valuesResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName + '!A1:U1000')}`,
+    {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  if (!valuesResponse.ok) {
+    const errData = await valuesResponse.json().catch(() => ({}));
+    throw new Error(errData.error?.message || 'Не удалось загрузить данные из Google Таблицы');
+  }
+
+  const data = await valuesResponse.json();
+  const values: any[][] = data.values;
+
+  if (!values || values.length <= 1) {
+    return [];
+  }
+
+  // 3. Parse headers
+  const headers = values[0].map(h => String(h).toLowerCase());
+  
+  // Find indices based on headers
+  const dateIdx = headers.findIndex(h => h.includes('дата') || h.includes('date'));
+  const coldIdx = headers.findIndex(h => h.includes('хвс') || h.includes('холодная') || h.includes('cold'));
+  const hotIdx = headers.findIndex(h => h.includes('гвс') || h.includes('горячая') || h.includes('hot'));
+  const elecIdx = headers.findIndex(h => h.includes('t1') || h.includes('электричество t1') || h.includes('пик') || (h.includes('электричество') && !h.includes('t2') && !h.includes('t3')));
+  const elecT2Idx = headers.findIndex(h => h.includes('t2') || h.includes('полупик') || h.includes('электричество t2'));
+  const elecT3Idx = headers.findIndex(h => h.includes('t3') || h.includes('ночь') || h.includes('электричество t3'));
+  const notesIdx = headers.findIndex(h => h.includes('заметки') || h.includes('note') || h.includes('примечание'));
+
+  // Fallback fixed indices if header search fails
+  const getIndex = (foundIdx: number, defaultIdx: number) => foundIdx !== -1 ? foundIdx : defaultIdx;
+
+  const finalDateIdx = getIndex(dateIdx, 1);
+  const finalColdIdx = getIndex(coldIdx, 2);
+  const finalHotIdx = getIndex(hotIdx, 5);
+  const finalElecIdx = getIndex(elecIdx, 10);
+  const finalElecT2Idx = getIndex(elecT2Idx, 13);
+  const finalElecT3Idx = getIndex(elecT3Idx, 16);
+  const finalNotesIdx = getIndex(notesIdx, 19);
+
+  // 4. Map rows to MeterReading
+  const readings: MeterReading[] = [];
+  
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    if (!row || row.length <= Math.max(finalDateIdx, finalColdIdx, finalHotIdx)) {
+      continue;
+    }
+
+    const dateStr = String(row[finalDateIdx] || '').trim();
+    // Validate date format YYYY-MM-DD
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      continue;
+    }
+
+    const parseNum = (val: any) => {
+      if (val === undefined || val === null || val === '') return undefined;
+      // Handle comma decimal separators common in Russian locales
+      const normalized = String(val).replace(',', '.').replace(/\s/g, '');
+      const num = Number(normalized);
+      return isNaN(num) ? undefined : num;
+    };
+
+    const coldWater = parseNum(row[finalColdIdx]) ?? 0;
+    const hotWater = parseNum(row[finalHotIdx]) ?? 0;
+    const electricity = parseNum(row[finalElecIdx]) ?? 0;
+    const electricityHalfPeak = parseNum(row[finalElecT2Idx]);
+    const electricityNight = parseNum(row[finalElecT3Idx]);
+    const notes = row[finalNotesIdx] !== undefined ? String(row[finalNotesIdx]).trim() : undefined;
+
+    readings.push({
+      id: `gs-${dateStr}`, // Use stable ID from date to allow robust syncing and prevent duplicates
+      date: dateStr,
+      coldWater,
+      hotWater,
+      electricity,
+      electricityHalfPeak: electricityHalfPeak !== undefined ? electricityHalfPeak : undefined,
+      electricityNight: electricityNight !== undefined ? electricityNight : undefined,
+      notes: notes || '',
+    });
+  }
+
+  // Sort chronologically
+  return readings.sort((a, b) => a.date.localeCompare(b.date));
 };

@@ -23,6 +23,7 @@ interface ReminderSettingsProps {
   onGoogleLogout: () => Promise<void>;
   onCreateSpreadsheet: () => Promise<void>;
   onSyncToGoogleSheet: () => Promise<void>;
+  onPullFromGoogleSheet: () => Promise<void>;
   onSaveSpreadsheetId: (id: string | null) => void;
 }
 
@@ -45,6 +46,7 @@ export const ReminderSettings: React.FC<ReminderSettingsProps> = ({
   onGoogleLogout,
   onCreateSpreadsheet,
   onSyncToGoogleSheet,
+  onPullFromGoogleSheet,
   onSaveSpreadsheetId
 }) => {
   const [enabled, setEnabled] = useState(config.enabled);
@@ -598,23 +600,43 @@ export const ReminderSettings: React.FC<ReminderSettingsProps> = ({
                     </div>
 
                     {/* Sync Actions */}
-                    <div className="flex flex-col gap-2">
-                      <button
-                        type="button"
-                        onClick={onSyncToGoogleSheet}
-                        disabled={isSyncing}
-                        className="w-full py-2.5 bg-ios-green hover:bg-ios-green/95 text-white font-bold rounded-xl text-xs shadow-md shadow-ios-green/10 flex items-center justify-center gap-1.5 active:scale-98 transition-all disabled:opacity-70 disabled:pointer-events-none cursor-pointer"
-                      >
-                        {isSyncing ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <RefreshCw className="w-3.5 h-3.5" />
-                        )}
-                        <span>Синхронизировать данные ({readings.length} зап.)</span>
-                      </button>
+                    <div className="flex flex-col gap-2.5">
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* Pull from sheets */}
+                        <button
+                          type="button"
+                          onClick={onPullFromGoogleSheet}
+                          disabled={isSyncing}
+                          className="py-2.5 px-3 rounded-xl bg-ios-blue hover:bg-ios-blue/95 text-white font-bold text-xs shadow-md shadow-ios-blue/10 flex items-center justify-center gap-1.5 active:scale-98 transition-all disabled:opacity-70 disabled:pointer-events-none cursor-pointer"
+                        >
+                          {isSyncing ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Download className="w-3.5 h-3.5" />
+                          )}
+                          <span>Загрузить данные</span>
+                        </button>
 
-                      <div className="flex items-center justify-between px-1 py-1 text-[10px] text-gray-500 leading-normal">
-                        <span>💡 Синхронизация выполняется автоматически при изменениях.</span>
+                        {/* Push to sheets */}
+                        <button
+                          type="button"
+                          onClick={onSyncToGoogleSheet}
+                          disabled={isSyncing}
+                          className="py-2.5 px-3 rounded-xl bg-ios-green hover:bg-ios-green/95 text-white font-bold text-xs shadow-md shadow-ios-green/10 flex items-center justify-center gap-1.5 active:scale-98 transition-all disabled:opacity-70 disabled:pointer-events-none cursor-pointer"
+                        >
+                          {isSyncing ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Upload className="w-3.5 h-3.5" />
+                          )}
+                          <span>Выгрузить данные</span>
+                        </button>
+                      </div>
+
+                      <div className="px-1 text-[10px] text-gray-500 leading-normal space-y-1">
+                        <p>🔄 <strong>Автосинхронизация:</strong> любые изменения показаний автоматически отправляются в Google Таблицу.</p>
+                        <p>📥 <strong>Загрузить данные:</strong> импортирует и объединит записи из Google Таблицы в приложение.</p>
+                        <p>📤 <strong>Выгрузить данные:</strong> перезапишет показания в Google Таблице текущими данными из приложения.</p>
                       </div>
                     </div>
                   </div>
