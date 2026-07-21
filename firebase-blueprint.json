@@ -1,0 +1,27 @@
+{
+  "entities": {
+    "UserTariffs": {
+      "title": "User Tariffs",
+      "description": "Tariff settings for a specific user synced to Firestore",
+      "type": "object",
+      "properties": {
+        "coldWaterRate": { "type": "number", "description": "Rate for cold water" },
+        "hotWaterRate": { "type": "number", "description": "Rate for hot water" },
+        "wastewaterRate": { "type": "number", "description": "Rate for wastewater" },
+        "electricityRate": { "type": "number", "description": "Single-rate or peak rate for electricity" },
+        "electricityRateHalfPeak": { "type": "number", "description": "Half-peak rate for electricity" },
+        "electricityRateNight": { "type": "number", "description": "Night rate for electricity" },
+        "electricityTariffType": { "type": "string", "enum": ["single", "double", "triple"], "description": "Type of electricity tariff" },
+        "currency": { "type": "string", "maxLength": 10, "description": "Currency symbol" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp" }
+      },
+      "required": ["coldWaterRate", "hotWaterRate", "electricityRate", "electricityTariffType", "currency"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserTariffs",
+      "description": "User specific tariff configurations"
+    }
+  }
+}

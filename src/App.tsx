@@ -21,6 +21,7 @@ import {
   fetchReadingsFromGoogleSheet
 } from './utils/googleSheets';
 import { User as FirebaseUser } from 'firebase/auth';
+import { saveTariffsToFirestore, loadTariffsFromFirestore, testConnection } from './utils/firestoreSync';
 
 // Component Imports
 import { IOSNotification } from './components/iOSNotification';
@@ -239,13 +240,51 @@ export default function App() {
     }
   }, [readings]);
 
+  // Test connection to Firestore on initial boot
+  useEffect(() => {
+    testConnection();
+  }, []);
+
+  // Firestore Sync: Load tariffs when user logs in
+  useEffect(() => {
+    let active = true;
+    if (googleUser) {
+      const loadAndSyncTariffs = async () => {
+        try {
+          const cloudTariffs = await loadTariffsFromFirestore(googleUser.uid);
+          if (active) {
+            if (cloudTariffs) {
+              setTariffs(cloudTariffs);
+              console.log("Loaded tariffs from Firestore successfully!");
+            } else {
+              // No tariffs in cloud, save current local tariffs to Firestore
+              await saveTariffsToFirestore(googleUser.uid, tariffs);
+              console.log("Saved current local tariffs to Firestore for new user!");
+            }
+          }
+        } catch (error) {
+          console.error("Failed to load/sync tariffs with Firestore:", error);
+        }
+      };
+      loadAndSyncTariffs();
+    }
+    return () => {
+      active = false;
+    };
+  }, [googleUser]);
+
   useEffect(() => {
     try {
       safeStorage.setItem('meter_tariffs', JSON.stringify(tariffs));
+      // Save to Firestore if signed in
+      if (googleUser) {
+        saveTariffsToFirestore(googleUser.uid, tariffs)
+          .catch(err => console.error("Error auto-saving tariffs to Firestore:", err));
+      }
     } catch (e) {
       console.warn('Failed to save tariffs:', e);
     }
-  }, [tariffs]);
+  }, [tariffs, googleUser]);
 
   useEffect(() => {
     try {

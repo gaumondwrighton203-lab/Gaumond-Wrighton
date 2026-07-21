@@ -9,6 +9,7 @@ import {
   User, 
   signOut 
 } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { CalculatedReading } from './calculations';
 import { safeStorage } from './storage';
@@ -32,6 +33,7 @@ const getDynamicFirebaseConfig = () => {
 // Initialize Firebase App securely
 const app = getApps().length === 0 ? initializeApp(getDynamicFirebaseConfig()) : getApp();
 export const auth = getAuth(app);
+export const db = getFirestore(app);
 
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/spreadsheets');
