@@ -14,14 +14,15 @@ import { CalculatedReading } from './calculations';
 import { safeStorage } from './storage';
 import { MeterReading } from '../types';
 
-// Dynamically configure authDomain for Netlify proxying to fix Safari third-party cookie issue
+// Dynamically configure authDomain for Netlify and Vercel proxying to fix Safari third-party cookie issue
 const getDynamicFirebaseConfig = () => {
   const config = { ...firebaseConfig };
   if (typeof window !== 'undefined') {
-    const isNetlify = window.location.hostname.includes('netlify.app') || 
-                      window.location.hostname.includes('stirring-boba-d22fba') ||
-                      window.location.hostname.includes('netlify.com');
-    if (isNetlify) {
+    const isProxyAuth = window.location.hostname.includes('netlify.app') || 
+                        window.location.hostname.includes('stirring-boba-d22fba') ||
+                        window.location.hostname.includes('netlify.com') ||
+                        window.location.hostname.includes('vercel.app');
+    if (isProxyAuth) {
       config.authDomain = window.location.hostname;
     }
   }
